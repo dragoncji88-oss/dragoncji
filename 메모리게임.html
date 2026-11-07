@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>이모지 메모리 짝맞추기 게임</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .perspective-1000 {
+            perspective: 1000px;
+        }
+        .card-inner {
+            transition: transform 0.5s cubic-bezier(0.4, 0.2, 0.2, 1);
+            transform-style: preserve-3d;
+        }
+        .card.flipped .card-inner {
+            transform: rotateY(180deg);
+        }
+        .card-face {
+            backface-visibility: hidden;
+        }
+        .card-back-face {
+            transform: rotateY(180deg);
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 min-h-screen flex flex-col items-center justify-center p-4 font-sans select-none">
+
+    <!-- 메인 컨테이너 -->
+    <div class="bg-white/90 backdrop-blur-md rounded-2xl shadow-2xl p-6 md:p-8 w-full max-w-md flex flex-col items-center">
+        
+        <!-- 타이틀 -->
+        <h1 class="text-2xl md:text-3xl font-extrabold text-gray-800 mb-6 text-center">🧠 이모지 메모리 게임</h1>
+
+        <!-- 상단 정보 패널 (시도 횟수, 경과 시간, 리셋 버튼) -->
+        <div class="flex items-center justify-between w-full mb-6 bg-gray-100 p-4 rounded-xl shadow-inner text-sm md:text-base font-semibold text-gray-700">
+            <div class="flex flex-col items-center">
+                <span class="text-xs text-gray-500">시도 횟수</span>
+                <span id="attempts" class="text-indigo-600 text-lg">0</span>
+            </div>
+            <div class="flex flex-col items-center">
+                <span class="text-xs text-gray-500">경과 시간</span>
+                <span id="timer" class="text-purple-600 text-lg">00:00</span>
+            </div>
+            <button onclick="resetGame()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg shadow transition transform active:scale-95 text-sm font-bold">
+                다시 시작
+            </button>
+        </div>
+
+        <!-- 게임 보드 (4x4 그리드) -->
+        <div id="game-board" class="grid grid-cols-4 gap-3 md:gap-4 w-full aspect-square mb-2">
+            <!-- 자바스크립트로 카드가 동적 생성됩니다 -->
+        </div>
+    </div>
+
+    <!-- 승리 축하 모달 -->
+    <div id="win-modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 hidden z-50">
+        <div class="bg-white rounded-2xl p-6 md:p-8 max-w-sm w-full text-center shadow-2xl transform scale-90 opacity-0 transition-all duration-300" id="modal-content">
+            <div class="text-5xl mb-4">🎉</div>
+            <h2 class="text-2xl font-bold text-gray-800 mb-2">축하합니다!</h2>
+            <p class="text-gray-600 mb-6">모든 카드를 맞추셨습니다!</p>
+            <div class="bg-gray-50 rounded-xl p-4 mb-6 space-y-2 text-sm text-gray-700">
+                <div class="flex justify-between">
+                    <span>총 소요 시간:</span>
+                    <span id="final-time" class="font-bold text-purple-600">00:00</span>
+                </div>
+                <div class="flex justify-between">
+                    <span>총 시도 횟수:</span>
+                    <span id="final-attempts" class="font-bold text-indigo-600">0</span>
+                </div>
+            </div>
+            <button onclick="resetGame()" class="w-full bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white font-bold py-3 rounded-xl shadow-lg transition transform active:scale-95">
+                다시 플레이하기
+            </button>
+        </div>
+    </div>
+
+    <script>
+        const emojis = ['🐶', '🐱', '🦊', '🐼', '🐨', '🦁', '🐯', '🐰'];
+        let cards = [];
+        let flippedCards = [];
+        let matchedPairs = 0;
+        let attempts = 0;
+        let timer = 0;
+        let timerInterval = null;
+        let isStarted = false;
+        let isLocked = false;
+
+        const boardElement = document.getElementById('game-board');
+        const attemptsElement = document.getElementById('attempts');
+        const timerElement = document.getElementById('timer');
+        const winModal = document.getElementById('win-modal');
+        const modalContent = document.getElementById('modal-content');
+        const finalTimeElement = document.getElementById('final-time');
+        const finalAttemptsElement = document.getElementById('final-attempts');
+
+        // 게임 초기화 및 시작
+        function initGame() {
+            // 상태 초기화
+            boardElement.innerHTML = '';
+            flippedCards = [];
+            matchedPairs = 0;
+            attempts = 0;
+            timer = 0;
+            isStarted = false;
+            isLocked = false;
+            attemptsElement.textContent = attempts;
+            timerElement.textContent = '00:00';
+            clearInterval(timerInterval);
+            winModal.classList.add('hidden');
+            modalContent.classList.remove('scale-100', 'opacity-100');
+            modalContent.classList.add('scale-90', 'opacity-0');
+
+            // 카드 짝 맞추기용 16장 배열 생성 (8쌍)
+            cards = [...emojis, ...emojis]
+                .sort(() => Math.random() - 0.5)
+                .map((emoji, index) => ({
+                    id: index,
+                    emoji: emoji,
+                    isFlipped: false,
+                    isMatched: false
+                }));
+
+            // DOM에 카드 렌더링
+            cards.forEach(card => {
+                const cardEl = document.createElement('div');
+                cardEl.classList.add('card', 'perspective-1000', 'cursor-pointer', 'w-full', 'h-full');
+                cardEl.dataset.id = card.id;
+
+                cardEl.innerHTML = `
+                    <div class="card-inner relative w-full h-full rounded-xl shadow-md">
+                        <!-- 카드 뒷면 (클릭 전) -->
+                        <div class="card-face absolute inset-0 bg-gradient-to-tr from-indigo-600 to-purple-600 rounded-xl flex items-center justify-center text-white text-2xl shadow">
+                            ❓
+                        </div>
+                        <!-- 카드 앞면 (이모지) -->
+                        <div class="card-face card-back-face absolute inset-0 bg-white rounded-xl flex items-center justify-center text-3xl md:text-4xl border-2 border-indigo-100 shadow">
+                            ${card.emoji}
+                        </div>
+                    </div>
+                `;
+
+                cardEl.addEventListener('click', () => handleCardClick(card.id, cardEl));
+                boardElement.appendChild(cardEl);
+            });
+        }
+
+        // 타이머 시작
+        function startTimer() {
+            if (isStarted) return;
+            isStarted = true;
+            timerInterval = setInterval(() => {
+                timer++;
+                const mins = Math.floor(timer / 60).toString().padStart(2, '0');
+                const secs = (timer % 60).toString().padStart(2, '0');
+                timerElement.textContent = `${mins}:${secs}`;
+            }, 1000);
+        }
+
+        // 카드 클릭 핸들러
+        function handleCardClick(id, element) {
+            if (isLocked) return;
+            const clickedCard = cards.find(c => c.id === id);
+
+            // 이미 뒤집혔거나 맞춘 카드인 경우 무시
+            if (clickedCard.isFlipped || clickedCard.isMatched) return;
+
+            startTimer();
+
+            // 카드 뒤집기
+            clickedCard.isFlipped = true;
+            element.classList.add('flipped');
+            flippedCards.push({ id, emoji: clickedCard.emoji, element });
+
+            // 두 장을 골랐을 때
+            if (flippedCards.length === 2) {
+                attempts++;
+                attemptsElement.textContent = attempts;
+                isLocked = true;
+
+                const [card1, card2] = flippedCards;
+
+                if (card1.emoji === card2.emoji) {
+                    // 짝이 맞는 경우
+                    cards.find(c => c.id === card1.id).isMatched = true;
+                    cards.find(c => c.id === card2.id).isMatched = true;
+                    
+                    // 맞춘 카드 시각적 효과 (약간의 바운스 또는 성공 효과)
+                    card1.element.querySelector('.card-inner').classList.add('scale-95', 'opacity-80');
+                    card2.element.querySelector('.card-inner').classList.add('scale-95', 'opacity-80');
+
+                    flippedCards = [];
+                    isLocked = false;
+                    matchedPairs++;
+
+                    // 승리 조건 체크 (8쌍)
+                    if (matchedPairs === emojis.length) {
+                        clearInterval(timerInterval);
+                        setTimeout(showWinModal, 400);
+                    }
+                } else {
+                    // 짝이 틀린 경우 잠시 보여준 후 다시 뒤집기
+                    setTimeout(() => {
+                        cards.find(c => c.id === card1.id).isFlipped = false;
+                        cards.find(c => c.id === card2.id).isFlipped = false;
+                        card1.element.classList.remove('flipped');
+                        card2.element.classList.remove('flipped');
+                        flippedCards = [];
+                        isLocked = false;
+                    }, 800);
+                }
+            }
+        }
+
+        // 승리 모달 표시
+        function showWinModal() {
+            finalTimeElement.textContent = timerElement.textContent;
+            finalAttemptsElement.textContent = attempts;
+            winModal.classList.remove('hidden');
+            setTimeout(() => {
+                modalContent.classList.remove('scale-90', 'opacity-0');
+                modalContent.classList.add('scale-100', 'opacity-100');
+            }, 50);
+        }
+
+        // 게임 리셋 함수
+        function resetGame() {
+            initGame();
+        }
+
+        // 초기 실행
+        initGame();
+    </script>
+</body>
+</html>
